@@ -89,12 +89,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("--intent_loss_coef", type=float, default=0.5, help="Coefficient for the intent loss.")
-    parser.add_argument(
-        "--token_level",
-        type=str,
-        default="word-level",
-        help="Tokens are at syllable level or word level (Vietnamese) [word-level, syllable-level]",
-    )
+
     parser.add_argument(
         "--early_stopping",
         type=int,
