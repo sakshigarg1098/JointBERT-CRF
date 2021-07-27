@@ -1,10 +1,11 @@
+import os
 import copy
 import json
 import logging
-import os
 
 import torch
 from torch.utils.data import TensorDataset
+
 from utils import get_intent_labels, get_slot_labels
 
 logger = logging.getLogger(__name__)
@@ -70,9 +71,9 @@ class JointProcessor(object):
         self.intent_labels = get_intent_labels(args)
         self.slot_labels = get_slot_labels(args)
 
-        self.input_text_file = "seq.in"
-        self.intent_label_file = "label"
-        self.slot_labels_file = "seq.out"
+        self.input_text_file = 'seq.in'
+        self.intent_label_file = 'label'
+        self.slot_labels_file = 'seq.out'
 
     @classmethod
     def _read_file(cls, input_file, quotechar=None):
@@ -91,15 +92,11 @@ class JointProcessor(object):
             # 1. input_text
             words = text.split()  # Some are spaced twice
             # 2. intent
-            intent_label = (
-                self.intent_labels.index(intent) if intent in self.intent_labels else self.intent_labels.index("UNK")
-            )
+            intent_label = self.intent_labels.index(intent) if intent in self.intent_labels else self.intent_labels.index("UNK")
             # 3. slot
             slot_labels = []
             for s in slot.split():
-                slot_labels.append(
-                    self.slot_labels.index(s) if s in self.slot_labels else self.slot_labels.index("UNK")
-                )
+                slot_labels.append(self.slot_labels.index(s) if s in self.slot_labels else self.slot_labels.index("UNK"))
 
             assert len(words) == len(slot_labels)
             examples.append(InputExample(guid=guid, words=words, intent_label=intent_label, slot_labels=slot_labels))
@@ -110,29 +107,26 @@ class JointProcessor(object):
         Args:
             mode: train, dev, test
         """
-        data_path = os.path.join(self.args.data_dir, self.args.token_level, mode)
+        data_path = os.path.join(self.args.data_dir, self.args.task, mode)
         logger.info("LOOKING AT {}".format(data_path))
-        return self._create_examples(
-            texts=self._read_file(os.path.join(data_path, self.input_text_file)),
-            intents=self._read_file(os.path.join(data_path, self.intent_label_file)),
-            slots=self._read_file(os.path.join(data_path, self.slot_labels_file)),
-            set_type=mode,
-        )
+        return self._create_examples(texts=self._read_file(os.path.join(data_path, self.input_text_file)),
+                                     intents=self._read_file(os.path.join(data_path, self.intent_label_file)),
+                                     slots=self._read_file(os.path.join(data_path, self.slot_labels_file)),
+                                     set_type=mode)
 
 
-processors = {"syllable-level": JointProcessor, "word-level": JointProcessor}
+processors = {
+    "atis": JointProcessor,
+    "snips": JointProcessor
+}
 
 
-def convert_examples_to_features(
-        examples,
-        max_seq_len,
-        tokenizer,
-        pad_token_label_id=-100,
-        cls_token_segment_id=0,
-        pad_token_segment_id=0,
-        sequence_a_segment_id=0,
-        mask_padding_with_zero=True,
-):
+def convert_examples_to_features(examples, max_seq_len, tokenizer,
+                                 pad_token_label_id=-100,
+                                 cls_token_segment_id=0,
+                                 pad_token_segment_id=0,
+                                 sequence_a_segment_id=0,
+                                 mask_padding_with_zero=True):
     # Setting based on the current model type
     cls_token = tokenizer.cls_token
     sep_token = tokenizer.sep_token
@@ -158,8 +152,8 @@ def convert_examples_to_features(
         # Account for [CLS] and [SEP]
         special_tokens_count = 2
         if len(tokens) > max_seq_len - special_tokens_count:
-            tokens = tokens[: (max_seq_len - special_tokens_count)]
-            slot_labels_ids = slot_labels_ids[: (max_seq_len - special_tokens_count)]
+            tokens = tokens[:(max_seq_len - special_tokens_count)]
+            slot_labels_ids = slot_labels_ids[:(max_seq_len - special_tokens_count)]
 
         # Add [SEP] token
         tokens += [sep_token]
@@ -185,15 +179,9 @@ def convert_examples_to_features(
         slot_labels_ids = slot_labels_ids + ([pad_token_label_id] * padding_length)
 
         assert len(input_ids) == max_seq_len, "Error with input length {} vs {}".format(len(input_ids), max_seq_len)
-        assert len(attention_mask) == max_seq_len, "Error with attention mask length {} vs {}".format(
-            len(attention_mask), max_seq_len
-        )
-        assert len(token_type_ids) == max_seq_len, "Error with token type length {} vs {}".format(
-            len(token_type_ids), max_seq_len
-        )
-        assert len(slot_labels_ids) == max_seq_len, "Error with slot labels length {} vs {}".format(
-            len(slot_labels_ids), max_seq_len
-        )
+        assert len(attention_mask) == max_seq_len, "Error with attention mask length {} vs {}".format(len(attention_mask), max_seq_len)
+        assert len(token_type_ids) == max_seq_len, "Error with token type length {} vs {}".format(len(token_type_ids), max_seq_len)
+        assert len(slot_labels_ids) == max_seq_len, "Error with slot labels length {} vs {}".format(len(slot_labels_ids), max_seq_len)
 
         intent_label_id = int(example.intent_label)
 
@@ -208,27 +196,28 @@ def convert_examples_to_features(
             logger.info("slot_labels: %s" % " ".join([str(x) for x in slot_labels_ids]))
 
         features.append(
-            InputFeatures(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                token_type_ids=token_type_ids,
-                intent_label_id=intent_label_id,
-                slot_labels_ids=slot_labels_ids,
-            )
-        )
+            InputFeatures(input_ids=input_ids,
+                          attention_mask=attention_mask,
+                          token_type_ids=token_type_ids,
+                          intent_label_id=intent_label_id,
+                          slot_labels_ids=slot_labels_ids
+                          ))
 
     return features
 
 
 def load_and_cache_examples(args, tokenizer, mode):
-    processor = processors[args.token_level](args)
+    processor = processors[args.task](args)
 
     # Load data features from cache or dataset file
     cached_features_file = os.path.join(
         args.data_dir,
-        "cached_{}_{}_{}_{}".format(
-            mode, args.token_level, list(filter(None, args.model_name_or_path.split("/"))).pop(), args.max_seq_len
-        ),
+        'cached_{}_{}_{}_{}'.format(
+            mode,
+            args.task,
+            list(filter(None, args.model_name_or_path.split("/"))).pop(),
+            args.max_seq_len
+        )
     )
 
     if os.path.exists(cached_features_file):
@@ -248,9 +237,8 @@ def load_and_cache_examples(args, tokenizer, mode):
 
         # Use cross entropy ignore index as padding label id so that only real label ids contribute to the loss later
         pad_token_label_id = args.ignore_index
-        features = convert_examples_to_features(
-            examples, args.max_seq_len, tokenizer, pad_token_label_id=pad_token_label_id
-        )
+        features = convert_examples_to_features(examples, args.max_seq_len, tokenizer,
+                                                pad_token_label_id=pad_token_label_id)
         logger.info("Saving features into cached file %s", cached_features_file)
         torch.save(features, cached_features_file)
 
@@ -261,7 +249,6 @@ def load_and_cache_examples(args, tokenizer, mode):
     all_intent_label_ids = torch.tensor([f.intent_label_id for f in features], dtype=torch.long)
     all_slot_labels_ids = torch.tensor([f.slot_labels_ids for f in features], dtype=torch.long)
 
-    dataset = TensorDataset(
-        all_input_ids, all_attention_mask, all_token_type_ids, all_intent_label_ids, all_slot_labels_ids
-    )
+    dataset = TensorDataset(all_input_ids, all_attention_mask,
+                            all_token_type_ids, all_intent_label_ids, all_slot_labels_ids)
     return dataset
